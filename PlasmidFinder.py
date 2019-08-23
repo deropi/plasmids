@@ -1,12 +1,13 @@
 import os
 import itertools
 import sys
+#import subprocess
 import argparse
 from Bio import SeqIO
 ##### Argument parsing
 parser = argparse.ArgumentParser(description = "This script analyzes assembled genomes and identifies plasmis present in RefSeq", epilog = 'Please, report bugs to dpicazo@ifam.uni-kiel.de')
 parser.add_argument("contigs",metavar="contigs",type=str,help="Fasta file containing contigs to parse")
-parser.add_argument("coverage",metavar="coverage",type=float,help="Minimum query coverage allowed (in percentage)")
+#parser.add_argument("coverage",metavar="coverage",type=float,help="Minimum query coverage allowed (in percentage)")
 parser.add_argument("identity",metavar="identity",type=float,help="Minimum sequence identity")
 parser.add_argument('output_name', metavar='output_name', type=str, help='Provide with an output name')
 parser.add_argument("-db", "--database", help="Specify the path to the plasmids database. If not specified, it will download the current version and create blast databases",action="store")
@@ -64,10 +65,6 @@ for db in [file for file in os.listdir(plasmids_path) if file.endswith('.fna')]:
 	
 ## Let's make a little filtering...
 hits = {}
-plasmids_hits = {}
-plasmids_hit_lengths = {}
-
-blast_clean = open(args.output_name+'_blastn.clean', 'w')
 plasmids_file = open(args.output_name+'_plasmids_sum.tab', 'w')
 
 for blastn in [file for file in os.listdir(plasmids_path) if file.endswith(args.output_name+'.blastn')]:
@@ -75,33 +72,41 @@ for blastn in [file for file in os.listdir(plasmids_path) if file.endswith(args.
 		for line in input:
 			if not line.startswith('#'):
 				info = line.strip().split()
-				if not hits.has_key(info[0]):
-					query  = info[0]
-					subject = info[1]
-					id = float(info[2])
-					query_cove = 100*(float(info[3])/float(len(contigs[query])))
-					if id >= args.identity and query_cove >= args.coverage:
-						hits[query] = info[1:]
-						blast_clean.write(line)
-						if not plasmids_hits.has_key(subject):
-							plasmids_hits[subject] = []
-							plasmids_hit_lengths[subject] =set()
-							#plasmids[subject][query] = set()
-						plasmids_hits[subject].append(query)
-						if int(info[8]) < int(info[9]):
-							for i in range(int(info[8]), int(info[9])):
-								plasmids_hit_lengths[subject].add(i)
-						else:
-							for i in range(int(info[9]), int(info[8])):
-                                                                plasmids_hit_lengths[subject].add(i)
-#print plasmids
-blast_clean.close()
+				query  = info[0]
+                                subject = info[1]
+				id = float(info[2])
+				if id >= args.identity:
+					if not hits.has_key(subject):
+						hits[subject] = {}
+					if not hits[subject].has_key(query):
+						hits[subject][query] = set()
+					if int(info[8]) < int(info[9]):
+						for i in range(int(info[8]), int(info[9])):
+							hits[subject][query].add(i)
+					else:
+						for i in range(int(info[9]), int(info[8])):
+							hits[subject][query].add(i)
+
 
 plasmids_file.write('Plasmid_ID\tplasmid_coverage\tmatching_contigs\tlength_plasmid\n')
-for plasmid in plasmids_hits:
+
+hits_final = {}
+
+for plasmid in hits:
+	hits_final[plasmid] = []
 #	print plasmids[plasmid].values()
-	plasmid_covered = 100*(float(len(plasmids_hit_lengths[plasmid]))/float(len(queries[plasmid])))
-	plasmids_file.write(plasmid + '\t' + str(plasmid_covered) + '\t' + str(plasmids_hits[plasmid]) + '\t' + str(len(queries[plasmid]))  + '\n'  )
+	new_set = set()
+	for element in hits[plasmid]:
+		if float(len(hits[plasmid][element]))/float(len(contigs[element])) >= 0.8:
+			new_set = new_set.union(hits[plasmid][element])
+			hits_final[plasmid].append(element)
+		#else:
+		#	del hits[plasmid][element]
+	plasmid_covered = 100*(float(len(new_set))/float(len(queries[plasmid])))
+	plasmids_file.write(plasmid + '\t' + str(plasmid_covered) + '\t' + str(hits_final[plasmid]) + '\t' + str(len(queries[plasmid]))  + '\n'  )
 plasmids_file.close()
+
+
+
 
 
